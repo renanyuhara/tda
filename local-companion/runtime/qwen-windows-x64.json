@@ -19,8 +19,9 @@
     "pyinstaller": "6.22.3"
   },
   "gpu": {
-    "minimum_compute_capability": "8.0",
+    "minimum_compute_capability": "7.5",
     "preferred_dtype": "bfloat16",
+    "turing_dtype": "float16",
     "minimum_driver_family": "560",
     "minimum_windows_driver": "561.17",
     "physical_gate": "RTX 4070 8 GB"
