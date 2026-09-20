@@ -9,11 +9,13 @@ from tda_companion.asr_qwen import (
     AudioWindow,
     QWEN_WINDOW_SECONDS,
     QwenRuntimeError,
+    QwenWindowTranscript,
     _runtime_fingerprint,
 )
 from tda_companion.asr_qwen_strict import (
     QWEN_WINDOW_OVERLAP_SECONDS,
     _owned_words,
+    _strict_alignment_segments,
     transcribe_craig_package_qwen_strict,
 )
 from tda_companion.craig import CraigPackage, CraigTrack
@@ -202,6 +204,66 @@ def test_strict_qwen_fails_instead_of_publishing_window_fallback(tmp_path: Path)
         "text_chars": 5,
         "language": "Portuguese",
     }
+
+
+def test_strict_qwen_discards_beyond_window_tail_owned_by_next_overlap():
+    window = AudioWindow(index=88, start=4698.0, end=4758.0, audio="w88")
+    pending = QwenWindowTranscript(
+        index=88,
+        start=4698.0,
+        end=4758.0,
+        text="owned tail",
+        language="Portuguese",
+    )
+
+    class Aligner:
+        def align(self, _audio, _text: str, _language: str):
+            return [
+                {"text": "owned", "start_time": 56.0, "end_time": 56.4},
+                {"text": "tail", "start_time": 59.92, "end_time": 61.68},
+            ]
+
+    segments = _strict_alignment_segments(
+        1,
+        window,
+        pending,
+        Aligner(),
+        first=False,
+        last=False,
+    )
+
+    assert [segment.text for segment in segments] == ["owned"]
+    assert segments[0].start == 4754.0
+    assert segments[0].end == 4754.4
+
+
+def test_strict_qwen_still_rejects_beyond_window_timestamp_in_owned_region():
+    window = AudioWindow(index=88, start=4698.0, end=4758.0, audio="w88")
+    pending = QwenWindowTranscript(
+        index=88,
+        start=4698.0,
+        end=4758.0,
+        text="bad",
+        language="Portuguese",
+    )
+
+    class Aligner:
+        def align(self, _audio, _text: str, _language: str):
+            return [{"text": "bad", "start_time": 56.5, "end_time": 61.68}]
+
+    with pytest.raises(QwenRuntimeError, match="QWEN_ALIGNMENT_REQUIRED") as error:
+        _strict_alignment_segments(
+            1,
+            window,
+            pending,
+            Aligner(),
+            first=False,
+            last=False,
+        )
+
+    assert isinstance(error.value.__cause__, QwenRuntimeError)
+    assert error.value.__cause__.code == "QWEN_ALIGNMENT_TIMESTAMPS_INVALID"
+    assert error.value.__cause__.details["timestamp_failure"] == "beyond_window"
 
 
 def test_overlap_ownership_assigns_boundary_words_once():
