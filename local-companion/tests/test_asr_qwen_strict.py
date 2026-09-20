@@ -155,6 +155,7 @@ def test_strict_qwen_accepts_silent_window_without_alignment(tmp_path: Path):
 
 def test_strict_qwen_fails_instead_of_publishing_window_fallback(tmp_path: Path):
     package, root = _package(tmp_path)
+    reports: list[dict] = []
 
     class Asr:
         def transcribe(self, _audio, *, prompt: str):
@@ -175,6 +176,7 @@ def test_strict_qwen_fails_instead_of_publishing_window_fallback(tmp_path: Path)
             tmp_path / "Models",
             profile_id="qwen-fast",
             checkpoints=False,
+            report=reports.append,
             plan_resolver=_plan,
             model_prepare=_model_prepare,
             aligner_prepare=_aligner_prepare,
@@ -182,6 +184,24 @@ def test_strict_qwen_fails_instead_of_publishing_window_fallback(tmp_path: Path)
             aligner_session_factory=lambda _root, _plan: BrokenAligner(),
             window_reader=_two_windows,
         )
+
+    failure = next(
+        item for item in reports if item.get("code") == "QWEN_ALIGNMENT_WINDOW_FAILED"
+    )
+    assert failure == {
+        "type": "event",
+        "code": "QWEN_ALIGNMENT_WINDOW_FAILED",
+        "stage": "alignment",
+        "track": 1,
+        "total_tracks": 1,
+        "speaker": "Alice",
+        "window": 1,
+        "window_start": 0.0,
+        "window_end": QWEN_WINDOW_SECONDS,
+        "reason": "QWEN_ALIGNMENT_FAILED",
+        "text_chars": 5,
+        "language": "Portuguese",
+    }
 
 
 def test_overlap_ownership_assigns_boundary_words_once():
