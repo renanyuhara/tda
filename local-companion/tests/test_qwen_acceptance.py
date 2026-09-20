@@ -272,21 +272,17 @@ def test_qwen_requires_cuda_capability_and_expected_gpu(tmp_path: Path):
             duration_reader=_duration,
         )
 
+    turing = _cuda()
+    turing["bf16_supported"] = False
+    turing["devices"] = [{**turing["devices"][0], "compute_capability": "7.5"}]
+    plan = acceptance.resolve_qwen_plan("qwen-fast", cuda_status=turing)
+    assert plan.compute_capability == "7.5"
+    assert plan.dtype == "float16"
+
     unsupported = _cuda()
-    unsupported["devices"] = [{**unsupported["devices"][0], "compute_capability": "7.5"}]
+    unsupported["devices"] = [{**unsupported["devices"][0], "compute_capability": "7.0"}]
     with pytest.raises(QwenAcceptanceError, match="QWEN_CUDA_CAPABILITY_UNSUPPORTED"):
-        run_qwen_gpu_acceptance(
-            audio,
-            tmp_path / "Models",
-            profile_id="qwen-fast",
-            cuda_status=unsupported,
-            prepare_model=_prepare_model,
-            prepare_aligner=_prepare_aligner,
-            asr_runner=_asr,
-            aligner_runner=_align,
-            monitor_factory=_Monitor,
-            duration_reader=_duration,
-        )
+        acceptance.resolve_qwen_plan("qwen-fast", cuda_status=unsupported)
 
     with pytest.raises(QwenAcceptanceError, match="QWEN_ACCEPTANCE_GPU_NAME_MISMATCH"):
         run_qwen_gpu_acceptance(
