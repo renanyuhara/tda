@@ -376,14 +376,35 @@ def transcribe_craig_package_qwen_strict(
                     if pending is None or not math.isclose(pending.start, window.start, abs_tol=0.001) or not math.isclose(pending.end, window.end, abs_tol=0.001):
                         raise QwenRuntimeError("QWEN_WINDOW_REPLAY_MISMATCH")
                     seen.add(window.index)
-                    window_segments = _strict_alignment_segments(
-                        track.number,
-                        window,
-                        pending,
-                        aligner,
-                        first=window.index == expected[0].index,
-                        last=window.index == last_index,
-                    )
+                    try:
+                        window_segments = _strict_alignment_segments(
+                            track.number,
+                            window,
+                            pending,
+                            aligner,
+                            first=window.index == expected[0].index,
+                            last=window.index == last_index,
+                        )
+                    except QwenRuntimeError as exc:
+                        cause = exc.__cause__
+                        reason = cause.code if isinstance(cause, QwenRuntimeError) else exc.code
+                        report(
+                            {
+                                "type": "event",
+                                "code": "QWEN_ALIGNMENT_WINDOW_FAILED",
+                                "stage": "alignment",
+                                "track": track.number,
+                                "total_tracks": total_tracks,
+                                "speaker": track.speaker,
+                                "window": window.index,
+                                "window_start": round(window.start, 3),
+                                "window_end": round(window.end, 3),
+                                "reason": reason,
+                                "text_chars": len(pending.text),
+                                "language": pending.language,
+                            }
+                        )
+                        raise
                     segments.extend(window_segments)
                     for segment in window_segments:
                         key = (track.number, segment.id)
