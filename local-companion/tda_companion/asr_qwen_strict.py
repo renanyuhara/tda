@@ -402,6 +402,7 @@ def transcribe_craig_package_qwen_strict(
                                 "reason": reason,
                                 "text_chars": len(pending.text),
                                 "language": pending.language,
+        **(cause.details if isinstance(cause, QwenRuntimeError) else {}),
                             }
                         )
                         raise
