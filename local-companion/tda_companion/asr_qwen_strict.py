@@ -380,7 +380,11 @@ def transcribe_craig_package_qwen_strict(
                     if is_cancelled():
                         raise QwenRuntimeError("ASR_CANCELLED")
                     pending = expected_by_index.get(window.index)
-                    if pending is None or not math.isclose(pending.start, window.start, abs_tol=0.001) or not math.isclose(pending.end, window.end, abs_tol=0.001):
+                    if (
+                        pending is None
+                        or not math.isclose(pending.start, window.start, abs_tol=0.001)
+                        or not math.isclose(pending.end, window.end, abs_tol=0.001)
+                    ):
                         raise QwenRuntimeError("QWEN_WINDOW_REPLAY_MISMATCH")
                     seen.add(window.index)
                     try:
@@ -394,7 +398,9 @@ def transcribe_craig_package_qwen_strict(
                         )
                     except QwenRuntimeError as exc:
                         cause = exc.__cause__
-                        reason = cause.code if isinstance(cause, QwenRuntimeError) else exc.code
+                        reason = (
+                            cause.code if isinstance(cause, QwenRuntimeError) else exc.code
+                        )
                         report(
                             {
                                 "type": "event",
@@ -409,7 +415,11 @@ def transcribe_craig_package_qwen_strict(
                                 "reason": reason,
                                 "text_chars": len(pending.text),
                                 "language": pending.language,
-        **(cause.details if isinstance(cause, QwenRuntimeError) else {}),
+                                **(
+                                    cause.details
+                                    if isinstance(cause, QwenRuntimeError)
+                                    else {}
+                                ),
                             }
                         )
                         raise
