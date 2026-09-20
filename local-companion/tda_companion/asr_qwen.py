@@ -391,7 +391,12 @@ def _validated_words(
     previous_end = window.start
     word_index = 0
 
-    def invalid(kind: str, *, relative_start: float | None = None, relative_end: float | None = None) -> QwenRuntimeError:
+    def invalid(
+        kind: str,
+        *,
+        relative_start: float | None = None,
+        relative_end: float | None = None,
+    ) -> QwenRuntimeError:
         details: dict[str, Any] = {"timestamp_failure": kind, "word_index": word_index}
         if relative_start is not None and math.isfinite(relative_start):
             details["relative_start"] = round(relative_start, 3)
