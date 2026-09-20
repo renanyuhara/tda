@@ -179,7 +179,14 @@ def _strict_alignment_segments(
         return ()
     try:
         aligned = aligner.align(window.audio, pending.text, pending.language)
-        words = _validated_words(aligned, window)
+        discard_trailing_overflow_from = (
+            None if last else window.end - QWEN_WINDOW_OVERLAP_SECONDS / 2.0
+        )
+        words = _validated_words(
+            aligned,
+            window,
+            discard_trailing_overflow_from=discard_trailing_overflow_from,
+        )
     except QwenRuntimeError as exc:
         raise QwenRuntimeError("QWEN_ALIGNMENT_REQUIRED") from exc
     owned = _owned_words(words, window, first=first, last=last)
