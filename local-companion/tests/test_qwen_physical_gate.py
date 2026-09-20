@@ -384,6 +384,36 @@ def test_gate_default_accepts_any_supported_cuda_gpu(tmp_path: Path):
     assert gate["gpu"]["name"] == "NVIDIA GeForce RTX 3090"
 
 
+
+def test_gate_accepts_turing_sm75_and_rejects_older_cuda_capability(tmp_path: Path):
+    state, runtime, models = _prepared(tmp_path)
+    turing = _receipt()
+    turing["gpu"]["name"] = "NVIDIA GeForce RTX 2080 SUPER"
+    turing["alignment_gpu"]["name"] = "NVIDIA GeForce RTX 2080 SUPER"
+    turing["cuda"]["devices"][0]["name"] = "NVIDIA GeForce RTX 2080 SUPER"
+    turing["cuda"]["devices"][0]["compute_capability"] = "7.5"
+
+    gate = record_qwen_physical_gate(
+        state,
+        runtime,
+        models,
+        turing,
+        profile_id="qwen-fast",
+    )
+    assert gate["ready"] is True
+    assert gate["gpu"]["compute_capability"] == "7.5"
+
+    older = _receipt()
+    older["cuda"]["devices"][0]["compute_capability"] = "7.0"
+    with pytest.raises(QwenPhysicalGateError, match="QWEN_GATE_GPU_UNSUPPORTED"):
+        record_qwen_physical_gate(
+            state,
+            runtime,
+            models,
+            older,
+            profile_id="qwen-fast",
+        )
+
 def test_gate_can_still_require_an_explicit_gpu_name(tmp_path: Path):
     state, runtime, models = _prepared(tmp_path)
     bad = _receipt()
