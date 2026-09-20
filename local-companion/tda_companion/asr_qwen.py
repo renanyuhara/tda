@@ -373,7 +373,20 @@ def _window_energy_db(window: AudioWindow, segment_start: float, segment_end: fl
     return round(20.0 * math.log10(max(rms, 1e-6)), 3)
 
 
-def _validated_words(items: list[dict[str, Any]], window: AudioWindow) -> list[TranscriptWord]:
+def _validated_words(
+    items: list[dict[str, Any]],
+    window: AudioWindow,
+    *,
+    discard_trailing_overflow_from: float | None = None,
+) -> list[TranscriptWord]:
+    """Validate aligner timestamps, optionally discarding an unusable tail in overlap.
+
+    Strict overlapping alignment only owns the center of non-final windows. If
+    the aligner predicts a word that starts entirely inside the trailing
+    neighbor-owned overlap but extends beyond the physical window, the next
+    window is authoritative for that region. Stop before that impossible tail
+    instead of failing already-valid owned words.
+    """
     words: list[TranscriptWord] = []
     previous_end = window.start
     word_index = 0
@@ -407,10 +420,15 @@ def _validated_words(items: list[dict[str, Any]], window: AudioWindow) -> list[T
             raise invalid("negative_start", relative_start=relative_start, relative_end=relative_end)
         if end < start:
             raise invalid("end_before_start", relative_start=relative_start, relative_end=relative_end)
-        if end > window.end + 0.25:
-            raise invalid("beyond_window", relative_start=relative_start, relative_end=relative_end)
         if start + 0.05 < previous_end:
             raise invalid("temporal_regression", relative_start=relative_start, relative_end=relative_end)
+        if end > window.end + 0.25:
+            if (
+                discard_trailing_overflow_from is not None
+                and start >= discard_trailing_overflow_from
+            ):
+                break
+            raise invalid("beyond_window", relative_start=relative_start, relative_end=relative_end)
         words.append(TranscriptWord(text=text, start=round(start, 3), end=round(end, 3)))
         previous_end = max(previous_end, end)
     if not words:
