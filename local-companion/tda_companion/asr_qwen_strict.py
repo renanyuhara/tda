@@ -229,6 +229,7 @@ def transcribe_craig_package_qwen_strict(
         }
     )
     plan: QwenPlan = plan_resolver(profile.id)
+    report({"type": "event", "code": "QWEN_RUNTIME_PLAN_READY", "stage": "runtime_validation", "device": plan.device, "dtype": plan.dtype})
     prompt = _bounded_prompt(context, glossary)
     recipe = {
         "window_seconds": QWEN_WINDOW_SECONDS,
@@ -242,6 +243,7 @@ def transcribe_craig_package_qwen_strict(
         "alignment": QWEN_FORCED_ALIGNER_MODEL_ID,
         "alignment_policy": "strict-overlap-v2",
     }
+    report({"type": "event", "code": "QWEN_CHECKPOINT_SIGNATURE_STARTED", "stage": "runtime_validation"})
     signature = build_checkpoint_signature(
         package,
         profile,
@@ -250,6 +252,8 @@ def transcribe_craig_package_qwen_strict(
         glossary=" ".join(glossary.split())[:2000].strip(),
         runtime_fingerprint=_runtime_fingerprint(),
     )
+    report({"type": "event", "code": "QWEN_CHECKPOINT_SIGNATURE_READY", "stage": "runtime_validation"})
+    report({"type": "event", "code": "QWEN_CHECKPOINT_SCAN_STARTED", "stage": "runtime_validation", "total_tracks": len(package.tracks)})
 
     cached_tracks: dict[int, TranscriptTrack] = {}
     pending_tracks = []
@@ -285,6 +289,7 @@ def transcribe_craig_package_qwen_strict(
         else:
             pending_tracks.append(track)
 
+    report({"type": "event", "code": "QWEN_CHECKPOINT_SCAN_READY", "stage": "runtime_validation", "cached_tracks": len(cached_tracks), "pending_tracks": len(pending_tracks)})
     started = time.monotonic()
     pending_text: dict[int, list[QwenWindowTranscript]] = {}
     if pending_tracks:
