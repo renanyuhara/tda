@@ -43,9 +43,10 @@ QWEN_SEGMENT_MAX_SECONDS = 30.0
 
 
 class QwenRuntimeError(RuntimeError):
-    def __init__(self, code: str):
+    def __init__(self, code: str, *, details: dict[str, Any] | None = None):
         super().__init__(code)
         self.code = code
+        self.details = dict(details or {})
 
 
 @dataclass(frozen=True)
@@ -375,28 +376,41 @@ def _window_energy_db(window: AudioWindow, segment_start: float, segment_end: fl
 def _validated_words(items: list[dict[str, Any]], window: AudioWindow) -> list[TranscriptWord]:
     words: list[TranscriptWord] = []
     previous_end = window.start
+    word_index = 0
+
+    def invalid(kind: str, *, relative_start: float | None = None, relative_end: float | None = None) -> QwenRuntimeError:
+        details: dict[str, Any] = {"timestamp_failure": kind, "word_index": word_index}
+        if relative_start is not None and math.isfinite(relative_start):
+            details["relative_start"] = round(relative_start, 3)
+        if relative_end is not None and math.isfinite(relative_end):
+            details["relative_end"] = round(relative_end, 3)
+        details["previous_end_relative"] = round(previous_end - window.start, 3)
+        return QwenRuntimeError("QWEN_ALIGNMENT_TIMESTAMPS_INVALID", details=details)
+
     for item in items:
         if not isinstance(item, dict):
             continue
         text = str(item.get("text") or "").strip()
         if not text:
             continue
+        word_index += 1
         try:
             relative_start = float(item.get("start_time"))
             relative_end = float(item.get("end_time"))
         except (TypeError, ValueError) as exc:
-            raise QwenRuntimeError("QWEN_ALIGNMENT_TIMESTAMPS_INVALID") from exc
+            raise invalid("not_numeric") from exc
         start = window.start + relative_start
         end = window.start + relative_end
-        if (
-            not math.isfinite(start)
-            or not math.isfinite(end)
-            or relative_start < -0.05
-            or end < start
-            or end > window.end + 0.25
-            or start + 0.05 < previous_end
-        ):
-            raise QwenRuntimeError("QWEN_ALIGNMENT_TIMESTAMPS_INVALID")
+        if not math.isfinite(start) or not math.isfinite(end):
+            raise invalid("non_finite", relative_start=relative_start, relative_end=relative_end)
+        if relative_start < -0.05:
+            raise invalid("negative_start", relative_start=relative_start, relative_end=relative_end)
+        if end < start:
+            raise invalid("end_before_start", relative_start=relative_start, relative_end=relative_end)
+        if end > window.end + 0.25:
+            raise invalid("beyond_window", relative_start=relative_start, relative_end=relative_end)
+        if start + 0.05 < previous_end:
+            raise invalid("temporal_regression", relative_start=relative_start, relative_end=relative_end)
         words.append(TranscriptWord(text=text, start=round(start, 3), end=round(end, 3)))
         previous_end = max(previous_end, end)
     if not words:
