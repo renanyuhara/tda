@@ -505,7 +505,7 @@ def transcribe_craig_package_qwen_strict(
                     "completed": completed_tracks,
                     "total": total_tracks,
                     "unit": "tracks",
-                    "stage": "source_validation",
+                    "stage": "checkpoint_scan",
                 }
             )
         else:
