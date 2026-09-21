@@ -365,6 +365,47 @@ def test_gate_is_per_profile_and_rejects_receipts_with_private_payload(tmp_path:
         record_qwen_physical_gate(state, runtime, models, bad, profile_id="qwen-fast")
 
 
+def test_gate_accepts_turing_sm75_with_float16(tmp_path: Path):
+    state, runtime, models = _prepared(tmp_path)
+    receipt = _receipt()
+    gpu = "NVIDIA GeForce RTX 2080 SUPER"
+    receipt["gpu"]["name"] = gpu
+    receipt["alignment_gpu"]["name"] = gpu
+    receipt["cuda"]["devices"][0]["name"] = gpu
+    receipt["cuda"]["devices"][0]["compute_capability"] = "7.5"
+    receipt["cuda"]["bf16_supported"] = True
+    receipt["inference"]["compute_type"] = "float16"
+    receipt["alignment"]["compute_type"] = "float16"
+
+    gate = record_qwen_physical_gate(
+        state,
+        runtime,
+        models,
+        receipt,
+        profile_id="qwen-fast",
+    )
+
+    assert gate["ready"] is True
+    assert gate["gpu"]["name"] == gpu
+    assert gate["gpu"]["compute_capability"] == "7.5"
+    assert gate["metrics"]["compute_type"] == "float16"
+
+
+def test_gate_rejects_cuda_below_sm75(tmp_path: Path):
+    state, runtime, models = _prepared(tmp_path)
+    receipt = _receipt()
+    receipt["cuda"]["devices"][0]["compute_capability"] = "7.0"
+
+    with pytest.raises(QwenPhysicalGateError, match="QWEN_GATE_GPU_UNSUPPORTED"):
+        record_qwen_physical_gate(
+            state,
+            runtime,
+            models,
+            receipt,
+            profile_id="qwen-fast",
+        )
+
+
 def test_gate_default_accepts_any_supported_cuda_gpu(tmp_path: Path):
     state, runtime, models = _prepared(tmp_path)
     receipt = _receipt()
