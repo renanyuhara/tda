@@ -9,11 +9,14 @@ from tda_companion.asr_qwen import (
     AudioWindow,
     QWEN_WINDOW_SECONDS,
     QwenRuntimeError,
+    QwenWindowTranscript,
     _runtime_fingerprint,
 )
 from tda_companion.asr_qwen_strict import (
     QWEN_WINDOW_OVERLAP_SECONDS,
     _owned_words,
+    _recovery_windows,
+    _strict_alignment_segments,
     transcribe_craig_package_qwen_strict,
 )
 from tda_companion.craig import CraigPackage, CraigTrack
@@ -155,6 +158,7 @@ def test_strict_qwen_accepts_silent_window_without_alignment(tmp_path: Path):
 
 def test_strict_qwen_fails_instead_of_publishing_window_fallback(tmp_path: Path):
     package, root = _package(tmp_path)
+    reports: list[dict] = []
 
     class Asr:
         def transcribe(self, _audio, *, prompt: str):
@@ -175,6 +179,7 @@ def test_strict_qwen_fails_instead_of_publishing_window_fallback(tmp_path: Path)
             tmp_path / "Models",
             profile_id="qwen-fast",
             checkpoints=False,
+            report=reports.append,
             plan_resolver=_plan,
             model_prepare=_model_prepare,
             aligner_prepare=_aligner_prepare,
@@ -182,6 +187,84 @@ def test_strict_qwen_fails_instead_of_publishing_window_fallback(tmp_path: Path)
             aligner_session_factory=lambda _root, _plan: BrokenAligner(),
             window_reader=_two_windows,
         )
+
+    failure = next(
+        item for item in reports if item.get("code") == "QWEN_ALIGNMENT_WINDOW_FAILED"
+    )
+    assert failure == {
+        "type": "event",
+        "code": "QWEN_ALIGNMENT_WINDOW_FAILED",
+        "stage": "alignment",
+        "track": 1,
+        "total_tracks": 1,
+        "speaker": "Alice",
+        "window": 1,
+        "window_start": 0.0,
+        "window_end": QWEN_WINDOW_SECONDS,
+        "reason": "QWEN_ALIGNMENT_FAILED",
+        "text_chars": 5,
+        "language": "Portuguese",
+    }
+
+
+def test_strict_qwen_discards_beyond_window_tail_owned_by_next_overlap():
+    window = AudioWindow(index=88, start=4698.0, end=4758.0, audio="w88")
+    pending = QwenWindowTranscript(
+        index=88,
+        start=4698.0,
+        end=4758.0,
+        text="owned tail",
+        language="Portuguese",
+    )
+
+    class Aligner:
+        def align(self, _audio, _text: str, _language: str):
+            return [
+                {"text": "owned", "start_time": 56.0, "end_time": 56.4},
+                {"text": "tail", "start_time": 59.92, "end_time": 61.68},
+            ]
+
+    segments = _strict_alignment_segments(
+        1,
+        window,
+        pending,
+        Aligner(),
+        first=False,
+        last=False,
+    )
+
+    assert [segment.text for segment in segments] == ["owned"]
+    assert segments[0].start == 4754.0
+    assert segments[0].end == 4754.4
+
+
+def test_strict_qwen_still_rejects_beyond_window_timestamp_in_owned_region():
+    window = AudioWindow(index=88, start=4698.0, end=4758.0, audio="w88")
+    pending = QwenWindowTranscript(
+        index=88,
+        start=4698.0,
+        end=4758.0,
+        text="bad",
+        language="Portuguese",
+    )
+
+    class Aligner:
+        def align(self, _audio, _text: str, _language: str):
+            return [{"text": "bad", "start_time": 56.5, "end_time": 61.68}]
+
+    with pytest.raises(QwenRuntimeError, match="QWEN_ALIGNMENT_REQUIRED") as error:
+        _strict_alignment_segments(
+            1,
+            window,
+            pending,
+            Aligner(),
+            first=False,
+            last=False,
+        )
+
+    assert isinstance(error.value.__cause__, QwenRuntimeError)
+    assert error.value.__cause__.code == "QWEN_ALIGNMENT_TIMESTAMPS_INVALID"
+    assert error.value.__cause__.details["timestamp_failure"] == "beyond_window"
 
 
 def test_overlap_ownership_assigns_boundary_words_once():
@@ -286,7 +369,7 @@ def test_strict_qwen_replays_windows_in_lockstep_not_full_track_dict(
     # decodes each track only for ASR + alignment instead of a third energy pass.
     assert reads == 2
     assert align_calls == ["pass-2-one", "pass-2-two"]
-    assert "strict-overlap-v2" in document.engine.alignment
+    assert "strict-overlap-v3-recovery" in document.engine.alignment
     assert document.warnings == ()
 
 
@@ -359,9 +442,16 @@ def test_strict_qwen_checkpoint_reuse_skips_model_and_only_replays_energy(
         "completed": 1,
         "total": 1,
         "unit": "tracks",
-        "stage": "source_validation",
+        "stage": "checkpoint_scan",
     } in second_reports
     stages = [item.get("stage") for item in second_reports if item.get("type") == "stage"]
+    assert "runtime_fingerprint" in stages
+    assert "checkpoint_signature" in stages
+    assert "checkpoint_scan" in stages
+    assert stages.index("runtime_validation") < stages.index("runtime_fingerprint")
+    assert stages.index("runtime_fingerprint") < stages.index("checkpoint_signature")
+    assert stages.index("checkpoint_signature") < stages.index("checkpoint_scan")
+    assert any(item.get("code") == "QWEN_RUNTIME_FINGERPRINT_READY" for item in second_reports)
     assert "model_prepare" not in stages
     assert "model_load" not in stages
     assert "alignment" not in stages
@@ -385,3 +475,169 @@ def test_strict_qwen_checkpoint_reuse_skips_model_and_only_replays_energy(
 
     assert reads - before_upgrade == 2
     assert upgraded.as_dict()["tracks"] == first.as_dict()["tracks"]
+
+
+def test_strict_qwen_recovery_windows_cover_parent_with_overlap():
+    window = AudioWindow(
+        index=89,
+        start=4752.0,
+        end=4812.0,
+        audio=tuple(range(600)),
+    )
+
+    two = _recovery_windows(window, parts=2)
+    assert [(item.start, item.end) for item in two] == [
+        (4752.0, 4785.0),
+        (4779.0, 4812.0),
+    ]
+
+    four = _recovery_windows(window, parts=4)
+    assert [(item.start, item.end) for item in four] == [
+        (4752.0, 4770.0),
+        (4764.0, 4785.0),
+        (4779.0, 4800.0),
+        (4794.0, 4812.0),
+    ]
+
+
+def test_strict_qwen_recovers_invalid_full_window_with_subwindows(tmp_path: Path):
+    package, root = _package(tmp_path)
+    reports: list[dict] = []
+    window = AudioWindow(
+        index=1,
+        start=0.0,
+        end=60.0,
+        audio=tuple(range(600)),
+    )
+    asr_loads = 0
+    aligner_loads = 0
+
+    class InitialAsr:
+        def transcribe(self, audio, *, prompt: str):
+            assert len(audio) == 600
+            return "raw repeated text", "Portuguese"
+
+        def close(self):
+            pass
+
+    class RecoveryAsr:
+        def transcribe(self, audio, *, prompt: str):
+            return ("left" if audio[0] == 0 else "right"), "Portuguese"
+
+        def close(self):
+            pass
+
+    def asr_factory(_root, _plan):
+        nonlocal asr_loads
+        asr_loads += 1
+        return InitialAsr() if asr_loads == 1 else RecoveryAsr()
+
+    class InitialAligner:
+        def align(self, _audio, _text: str, _language: str):
+            return [{"text": "bad", "start_time": 0.0, "end_time": 130.16}]
+
+        def close(self):
+            pass
+
+    class RecoveryAligner:
+        def align(self, audio, text: str, _language: str):
+            if audio[0] == 0:
+                assert text == "left"
+                return [{"text": "left", "start_time": 5.0, "end_time": 6.0}]
+            assert text == "right"
+            return [{"text": "right", "start_time": 4.0, "end_time": 5.0}]
+
+        def close(self):
+            pass
+
+    def aligner_factory(_root, _plan):
+        nonlocal aligner_loads
+        aligner_loads += 1
+        return InitialAligner() if aligner_loads == 1 else RecoveryAligner()
+
+    document = transcribe_craig_package_qwen_strict(
+        package,
+        root,
+        tmp_path / "Models",
+        profile_id="qwen-fast",
+        checkpoints=False,
+        report=reports.append,
+        plan_resolver=_plan,
+        model_prepare=_model_prepare,
+        aligner_prepare=_aligner_prepare,
+        asr_session_factory=asr_factory,
+        aligner_session_factory=aligner_factory,
+        window_reader=lambda _path: iter([window]),
+        energy_reader=lambda *_args: -12.0,
+    )
+
+    assert asr_loads == 2
+    assert aligner_loads == 2
+    assert [segment.text for segment in document.tracks[0].segments] == ["left", "right"]
+    assert document.warnings == ()
+    assert "strict-overlap-v3-recovery" in document.engine.alignment
+    recovered = next(
+        item
+        for item in reports
+        if item.get("code") == "QWEN_ALIGNMENT_WINDOW_RECOVERED"
+    )
+    assert recovered["recovery_parts"] == 2
+    assert recovered["reason"] == "QWEN_ALIGNMENT_TIMESTAMPS_INVALID"
+
+
+def test_strict_qwen_preserves_raw_text_when_bounded_recovery_still_fails(
+    tmp_path: Path,
+):
+    package, root = _package(tmp_path)
+    reports: list[dict] = []
+    window = AudioWindow(
+        index=1,
+        start=0.0,
+        end=60.0,
+        audio=tuple(range(600)),
+    )
+
+    class Asr:
+        def transcribe(self, audio, *, prompt: str):
+            if len(audio) == 600:
+                return "raw text must survive", "Portuguese"
+            return "still unalignable", "Portuguese"
+
+        def close(self):
+            pass
+
+    class InvalidAligner:
+        def align(self, _audio, _text: str, _language: str):
+            return [{"text": "bad", "start_time": 0.0, "end_time": 130.16}]
+
+        def close(self):
+            pass
+
+    document = transcribe_craig_package_qwen_strict(
+        package,
+        root,
+        tmp_path / "Models",
+        profile_id="qwen-fast",
+        checkpoints=False,
+        report=reports.append,
+        plan_resolver=_plan,
+        model_prepare=_model_prepare,
+        aligner_prepare=_aligner_prepare,
+        asr_session_factory=lambda _root, _plan: Asr(),
+        aligner_session_factory=lambda _root, _plan: InvalidAligner(),
+        window_reader=lambda _path: iter([window]),
+        energy_reader=lambda *_args: -12.0,
+    )
+
+    assert len(document.tracks[0].segments) == 1
+    fallback = document.tracks[0].segments[0]
+    assert fallback.id.endswith("-fallback")
+    assert fallback.text == "raw text must survive"
+    assert fallback.words == ()
+    assert document.warnings == (
+        "QWEN_ALIGNMENT_RAW_FALLBACK:track-1:window-1",
+    )
+    assert any(
+        item.get("code") == "QWEN_ALIGNMENT_RAW_FALLBACK"
+        for item in reports
+    )

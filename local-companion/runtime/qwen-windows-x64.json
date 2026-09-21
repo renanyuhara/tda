@@ -19,7 +19,7 @@
     "pyinstaller": "6.22.3"
   },
   "gpu": {
-    "minimum_compute_capability": "8.0",
+    "minimum_compute_capability": "7.5",
     "preferred_dtype": "bfloat16",
     "minimum_driver_family": "560",
     "minimum_windows_driver": "561.17",

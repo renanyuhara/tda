@@ -241,7 +241,7 @@ def _validate_acceptance(
         if code not in {"QWEN_CUDA_DRIVER_INCOMPATIBLE", "QWEN_CUDA_EXECUTION_FAILED"}:
             code = "QWEN_CUDA_EXECUTION_FAILED"
         raise QwenPhysicalGateError(code)
-    if _capability_tuple(first.get("compute_capability")) < (8, 0):
+    if _capability_tuple(first.get("compute_capability")) < (7, 5):
         raise QwenPhysicalGateError("QWEN_GATE_GPU_UNSUPPORTED")
 
     required = (required_gpu_name or "").strip()

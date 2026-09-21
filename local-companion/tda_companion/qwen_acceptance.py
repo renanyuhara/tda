@@ -233,7 +233,7 @@ def resolve_qwen_plan(profile_id: str, *, cuda_status: dict[str, Any] | None = N
     devices = status.get("devices") or []
     first = devices[0] if isinstance(devices, list) and devices else {}
     capability = str(first.get("compute_capability") or "")
-    if _capability_tuple(capability) < (8, 0):
+    if _capability_tuple(capability) < (7, 5):
         raise QwenAcceptanceError("QWEN_CUDA_CAPABILITY_UNSUPPORTED")
     dtype = "bfloat16" if bool(status.get("bf16_supported")) else "float16"
     return QwenPlan(profile_id=profile.id, device="cuda", dtype=dtype, compute_capability=capability)
