@@ -31,6 +31,8 @@ ALIGNER_DIRECTORY = "qwen3-forced-aligner-0.6b-hf"
 MAX_ACCEPTANCE_AUDIO_BYTES = 2 * 1024**3
 MAX_ACCEPTANCE_AUDIO_SECONDS = 240.0
 QWEN_ACCEPTANCE_MAX_NEW_TOKENS = 512
+MIN_QWEN_COMPUTE_CAPABILITY = (7, 5)
+BF16_QWEN_COMPUTE_CAPABILITY = (8, 0)
 _COPY_CHUNK = 1024 * 1024
 
 ALIGNER_PROFILE = AsrProfile(
@@ -233,9 +235,15 @@ def resolve_qwen_plan(profile_id: str, *, cuda_status: dict[str, Any] | None = N
     devices = status.get("devices") or []
     first = devices[0] if isinstance(devices, list) and devices else {}
     capability = str(first.get("compute_capability") or "")
-    if _capability_tuple(capability) < (8, 0):
+    parsed_capability = _capability_tuple(capability)
+    if parsed_capability < MIN_QWEN_COMPUTE_CAPABILITY:
         raise QwenAcceptanceError("QWEN_CUDA_CAPABILITY_UNSUPPORTED")
-    dtype = "bfloat16" if bool(status.get("bf16_supported")) else "float16"
+    dtype = (
+        "bfloat16"
+        if parsed_capability >= BF16_QWEN_COMPUTE_CAPABILITY
+        and bool(status.get("bf16_supported"))
+        else "float16"
+    )
     return QwenPlan(profile_id=profile.id, device="cuda", dtype=dtype, compute_capability=capability)
 
 

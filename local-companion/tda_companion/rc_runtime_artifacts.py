@@ -17,7 +17,7 @@ from .qwen_runtime_bundle import assemble_qwen_runtime_bundle, parse_qwen_runtim
 from .runtime_release_evidence import CANDIDATE_SCHEMA, verify_candidate_assets
 
 RC_WHISPER_VERSION = "1.1.4"
-RC_QWEN_VERSION = "1.0.7"
+RC_QWEN_VERSION = "1.0.9"
 _ACTIONS_ARTIFACT_MAX_ENTRIES = 128
 _ACTIONS_ARTIFACT_MAX_UNCOMPRESSED_BYTES = 8 * 1024**3
 _COPY_CHUNK = 1024 * 1024
