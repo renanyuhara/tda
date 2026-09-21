@@ -470,7 +470,12 @@ def transcribe_craig_package_qwen_strict(
         runtime_fingerprint=_runtime_fingerprint(),
     )
     report({"type": "event", "code": "QWEN_CHECKPOINT_SIGNATURE_READY", "stage": "runtime_validation"})
-    report({"type": "event", "code": "QWEN_CHECKPOINT_SCAN_STARTED", "stage": "runtime_validation", "total_tracks": len(package.tracks)})
+    # Checkpoint discovery may need to parse large JSON artifacts from previous
+    # attempts. Publish a distinct stage before any filesystem work so the
+    # Companion UI and persisted job state do not misleadingly remain on
+    # runtime_validation while the GPU is intentionally idle.
+    report({"type": "stage", "stage": "checkpoint_scan", "profile": profile.id})
+    report({"type": "event", "code": "QWEN_CHECKPOINT_SCAN_STARTED", "stage": "checkpoint_scan", "total_tracks": len(package.tracks)})
 
     cached_tracks: dict[int, TranscriptTrack] = {}
     pending_tracks = []
@@ -487,7 +492,7 @@ def transcribe_craig_package_qwen_strict(
                 {
                     "type": "event",
                     "code": "ASR_CHECKPOINT_REUSED",
-                    "stage": "source_validation",
+                    "stage": "checkpoint_scan",
                     "track": track.number,
                     "total_tracks": total_tracks,
                     "speaker": track.speaker,
@@ -506,7 +511,7 @@ def transcribe_craig_package_qwen_strict(
         else:
             pending_tracks.append(track)
 
-    report({"type": "event", "code": "QWEN_CHECKPOINT_SCAN_READY", "stage": "runtime_validation", "cached_tracks": len(cached_tracks), "pending_tracks": len(pending_tracks)})
+    report({"type": "event", "code": "QWEN_CHECKPOINT_SCAN_READY", "stage": "checkpoint_scan", "cached_tracks": len(cached_tracks), "pending_tracks": len(pending_tracks)})
     started = time.monotonic()
     pending_text: dict[int, list[QwenWindowTranscript]] = {}
     if pending_tracks:
