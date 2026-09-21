@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 
 MIN_COMPATIBLE_WHISPER_RUNTIME_VERSION = "1.1.4"
-MIN_COMPATIBLE_QWEN_RUNTIME_VERSION = "1.0.7"
+MIN_COMPATIBLE_QWEN_RUNTIME_VERSION = "1.0.9"
 _VERSION = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 
 
