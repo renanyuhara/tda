@@ -19,6 +19,7 @@ from .asr_models import (
 from .qwen_acceptance import (
     ACCEPTANCE_SCHEMA,
     ALIGNER_PROFILE,
+    MIN_QWEN_COMPUTE_CAPABILITY,
     QWEN_FORCED_ALIGNER_MODEL_ID,
     QWEN_FORCED_ALIGNER_REVISION,
 )
@@ -241,7 +242,7 @@ def _validate_acceptance(
         if code not in {"QWEN_CUDA_DRIVER_INCOMPATIBLE", "QWEN_CUDA_EXECUTION_FAILED"}:
             code = "QWEN_CUDA_EXECUTION_FAILED"
         raise QwenPhysicalGateError(code)
-    if _capability_tuple(first.get("compute_capability")) < (8, 0):
+    if _capability_tuple(first.get("compute_capability")) < MIN_QWEN_COMPUTE_CAPABILITY:
         raise QwenPhysicalGateError("QWEN_GATE_GPU_UNSUPPORTED")
 
     required = (required_gpu_name or "").strip()
