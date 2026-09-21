@@ -254,6 +254,24 @@ def test_qwen_writes_transcript_only_when_explicit(tmp_path: Path):
     assert payload["words"][0]["text"] == "segredo"
 
 
+def test_qwen_turing_uses_float16_even_when_bf16_probe_reports_true():
+    turing = _cuda()
+    turing["devices"] = [
+        {
+            **turing["devices"][0],
+            "name": "NVIDIA GeForce RTX 2080 SUPER",
+            "compute_capability": "7.5",
+        }
+    ]
+    turing["bf16_supported"] = True
+
+    plan = acceptance.resolve_qwen_plan("qwen-fast", cuda_status=turing)
+
+    assert plan.device == "cuda"
+    assert plan.compute_capability == "7.5"
+    assert plan.dtype == "float16"
+
+
 def test_qwen_requires_cuda_capability_and_expected_gpu(tmp_path: Path):
     audio = tmp_path / "sample.flac"
     audio.write_bytes(b"fake-audio")
@@ -273,7 +291,7 @@ def test_qwen_requires_cuda_capability_and_expected_gpu(tmp_path: Path):
         )
 
     unsupported = _cuda()
-    unsupported["devices"] = [{**unsupported["devices"][0], "compute_capability": "7.5"}]
+    unsupported["devices"] = [{**unsupported["devices"][0], "compute_capability": "7.0"}]
     with pytest.raises(QwenAcceptanceError, match="QWEN_CUDA_CAPABILITY_UNSUPPORTED"):
         run_qwen_gpu_acceptance(
             audio,
