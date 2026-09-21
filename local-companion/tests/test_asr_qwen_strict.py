@@ -442,9 +442,11 @@ def test_strict_qwen_checkpoint_reuse_skips_model_and_only_replays_energy(
         "completed": 1,
         "total": 1,
         "unit": "tracks",
-        "stage": "source_validation",
+        "stage": "checkpoint_scan",
     } in second_reports
     stages = [item.get("stage") for item in second_reports if item.get("type") == "stage"]
+    assert "checkpoint_scan" in stages
+    assert stages.index("runtime_validation") < stages.index("checkpoint_scan")
     assert "model_prepare" not in stages
     assert "model_load" not in stages
     assert "alignment" not in stages
