@@ -445,8 +445,13 @@ def test_strict_qwen_checkpoint_reuse_skips_model_and_only_replays_energy(
         "stage": "checkpoint_scan",
     } in second_reports
     stages = [item.get("stage") for item in second_reports if item.get("type") == "stage"]
+    assert "runtime_fingerprint" in stages
+    assert "checkpoint_signature" in stages
     assert "checkpoint_scan" in stages
-    assert stages.index("runtime_validation") < stages.index("checkpoint_scan")
+    assert stages.index("runtime_validation") < stages.index("runtime_fingerprint")
+    assert stages.index("runtime_fingerprint") < stages.index("checkpoint_signature")
+    assert stages.index("checkpoint_signature") < stages.index("checkpoint_scan")
+    assert any(item.get("code") == "QWEN_RUNTIME_FINGERPRINT_READY" for item in second_reports)
     assert "model_prepare" not in stages
     assert "model_load" not in stages
     assert "alignment" not in stages
