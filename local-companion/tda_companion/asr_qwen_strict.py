@@ -461,15 +461,23 @@ def transcribe_craig_package_qwen_strict(
         "alignment_policy": "strict-overlap-v3-recovery",
     }
     report({"type": "event", "code": "QWEN_CHECKPOINT_SIGNATURE_STARTED", "stage": "runtime_validation"})
+    # Runtime fingerprinting queries installed distribution metadata. Keep it
+    # visible as its own worker stage because frozen/packaged environments can
+    # behave differently from the development interpreter before any model or
+    # checkpoint I/O begins.
+    report({"type": "stage", "stage": "runtime_fingerprint", "profile": profile.id})
+    runtime_fingerprint = _runtime_fingerprint()
+    report({"type": "event", "code": "QWEN_RUNTIME_FINGERPRINT_READY", "stage": "runtime_fingerprint"})
+    report({"type": "stage", "stage": "checkpoint_signature", "profile": profile.id})
     signature = build_checkpoint_signature(
         package,
         profile,
         recipe=recipe,
         context=" ".join(context.split())[:2000].strip(),
         glossary=" ".join(glossary.split())[:2000].strip(),
-        runtime_fingerprint=_runtime_fingerprint(),
+        runtime_fingerprint=runtime_fingerprint,
     )
-    report({"type": "event", "code": "QWEN_CHECKPOINT_SIGNATURE_READY", "stage": "runtime_validation"})
+    report({"type": "event", "code": "QWEN_CHECKPOINT_SIGNATURE_READY", "stage": "checkpoint_signature"})
     # Checkpoint discovery may need to parse large JSON artifacts from previous
     # attempts. Publish a distinct stage before any filesystem work so the
     # Companion UI and persisted job state do not misleadingly remain on
